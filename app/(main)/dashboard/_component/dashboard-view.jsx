@@ -1,15 +1,7 @@
 "use client";
 
-import React from "react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import React, { useMemo } from "react";
+import dynamic from "next/dynamic";
 import {
   BriefcaseIcon,
   LineChart,
@@ -28,14 +20,25 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
+// Lazy load heavy chart components
+const BarChart = dynamic(() => import("recharts").then(mod => ({ default: mod.BarChart })), { ssr: false });
+const Bar = dynamic(() => import("recharts").then(mod => ({ default: mod.Bar })), { ssr: false });
+const XAxis = dynamic(() => import("recharts").then(mod => ({ default: mod.XAxis })), { ssr: false });
+const YAxis = dynamic(() => import("recharts").then(mod => ({ default: mod.YAxis })), { ssr: false });
+const CartesianGrid = dynamic(() => import("recharts").then(mod => ({ default: mod.CartesianGrid })), { ssr: false });
+const Tooltip = dynamic(() => import("recharts").then(mod => ({ default: mod.Tooltip })), { ssr: false });
+const ResponsiveContainer = dynamic(() => import("recharts").then(mod => ({ default: mod.ResponsiveContainer })), { ssr: false });
+
 const DashboardView = ({ insights }) => {
-  // Transform salary data for the chart
-  const salaryData = insights.salaryRanges.map((range) => ({
-    name: range.role,
-    min: range.min / 1000,
-    max: range.max / 1000,
-    median: range.median / 1000,
-  }));
+  // Memoize expensive data transformations
+  const salaryData = useMemo(() => {
+    return insights.salaryRanges.map((range) => ({
+      name: range.role,
+      min: range.min / 1000,
+      max: range.max / 1000,
+      median: range.median / 1000,
+    }));
+  }, [insights.salaryRanges]);
 
   const getDemandLevelColor = (level) => {
     switch (level.toLowerCase()) {
@@ -50,8 +53,8 @@ const DashboardView = ({ insights }) => {
     }
   };
 
-  const getMarketOutlookInfo = (outlook) => {
-    switch (outlook.toLowerCase()) {
+  const getMarketOutlookInfo = (level) => {
+    switch (level.toLowerCase()) {
       case "positive":
         return { icon: TrendingUp, color: "text-green-500" };
       case "neutral":
@@ -66,12 +69,15 @@ const DashboardView = ({ insights }) => {
   const OutlookIcon = getMarketOutlookInfo(insights.marketOutlook).icon;
   const outlookColor = getMarketOutlookInfo(insights.marketOutlook).color;
 
-  // Format dates using date-fns
-  const lastUpdatedDate = format(new Date(insights.lastUpdated), "dd/MM/yyyy");
-  const nextUpdateDistance = formatDistanceToNow(
-    new Date(insights.nextUpdate),
-    { addSuffix: true }
-  );
+  // Memoize formatted dates
+  const { lastUpdatedDate, nextUpdateDistance } = useMemo(() => {
+    const lastUpdated = format(new Date(insights.lastUpdated), "dd/MM/yyyy");
+    const nextUpdate = formatDistanceToNow(
+      new Date(insights.nextUpdate),
+      { addSuffix: true }
+    );
+    return { lastUpdatedDate: lastUpdated, nextUpdateDistance: nextUpdate };
+  }, [insights.lastUpdated, insights.nextUpdate]);
 
   return (
     <div className="space-y-6">

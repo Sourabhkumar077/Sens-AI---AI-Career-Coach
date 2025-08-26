@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -12,7 +12,6 @@ import {
   Save,
 } from "lucide-react";
 import { toast } from "sonner";
-import MDEditor from "@uiw/react-md-editor";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +23,13 @@ import { useUser } from "@clerk/nextjs";
 import { entriesToMarkdown } from "@/app/lib/helper";
 import { resumeSchema } from "@/app/lib/schema";
 import html2pdf from "html2pdf.js/dist/html2pdf.min.js";
+import dynamic from "next/dynamic";
+
+// Lazy load heavy markdown editor
+const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { 
+  ssr: false,
+  loading: () => <div className="h-32 bg-muted animate-pulse rounded" />
+});
 
 export default function ResumeBuilder({ initialContent }) {
   const [activeTab, setActiveTab] = useState("edit");
@@ -63,13 +69,44 @@ export default function ResumeBuilder({ initialContent }) {
     if (initialContent) setActiveTab("preview");
   }, [initialContent]);
 
+  // Memoize contact markdown generation
+  const getContactMarkdown = useMemo(() => {
+    const { contactInfo } = formValues;
+    const parts = [];
+    if (contactInfo.email) parts.push(`📧 ${contactInfo.email}`);
+    if (contactInfo.mobile) parts.push(`📱 ${contactInfo.mobile}`);
+    if (contactInfo.linkedin)
+      parts.push(`💼 [LinkedIn](${contactInfo.linkedin})`);
+    if (contactInfo.twitter) parts.push(`🐦 [Twitter](${contactInfo.twitter})`);
+
+    return parts.length > 0
+      ? `## <div align="center">${user?.fullName || 'Your Name'}</div>
+        \n\n<div align="center">\n\n${parts.join(" | ")}\n\n</div>`
+      : "";
+  }, [formValues.contactInfo, user?.fullName]);
+
+  // Memoize combined content generation
+  const getCombinedContent = useMemo(() => {
+    const { summary, skills, experience, education, projects } = formValues;
+    return [
+      getContactMarkdown,
+      summary && `## Professional Summary\n\n${summary}`,
+      skills && `## Skills\n\n${skills}`,
+      entriesToMarkdown(experience, "Work Experience"),
+      entriesToMarkdown(education, "Education"),
+      entriesToMarkdown(projects, "Projects"),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }, [formValues, getContactMarkdown]);
+
   // Update preview content when form values change
   useEffect(() => {
     if (activeTab === "edit") {
-      const newContent = getCombinedContent();
+      const newContent = getCombinedContent;
       setPreviewContent(newContent ? newContent : initialContent);
     }
-  }, [formValues, activeTab]);
+  }, [formValues, activeTab, getCombinedContent, initialContent]);
 
   // Handle save result
   useEffect(() => {
@@ -80,35 +117,6 @@ export default function ResumeBuilder({ initialContent }) {
       toast.error(saveError.message || "Failed to save resume");
     }
   }, [saveResult, saveError, isSaving]);
-
-  const getContactMarkdown = () => {
-    const { contactInfo } = formValues;
-    const parts = [];
-    if (contactInfo.email) parts.push(`📧 ${contactInfo.email}`);
-    if (contactInfo.mobile) parts.push(`📱 ${contactInfo.mobile}`);
-    if (contactInfo.linkedin)
-      parts.push(`💼 [LinkedIn](${contactInfo.linkedin})`);
-    if (contactInfo.twitter) parts.push(`🐦 [Twitter](${contactInfo.twitter})`);
-
-    return parts.length > 0
-      ? `## <div align="center">${user.fullName}</div>
-        \n\n<div align="center">\n\n${parts.join(" | ")}\n\n</div>`
-      : "";
-  };
-
-  const getCombinedContent = () => {
-    const { summary, skills, experience, education, projects } = formValues;
-    return [
-      getContactMarkdown(),
-      summary && `## Professional Summary\n\n${summary}`,
-      skills && `## Skills\n\n${skills}`,
-      entriesToMarkdown(experience, "Work Experience"),
-      entriesToMarkdown(education, "Education"),
-      entriesToMarkdown(projects, "Projects"),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-  };
 
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -173,7 +181,7 @@ export default function ResumeBuilder({ initialContent }) {
           <Button onClick={generatePDF} disabled={isGenerating}>
             {isGenerating ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Generating PDF...
               </>
             ) : (
