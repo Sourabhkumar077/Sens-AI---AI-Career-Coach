@@ -26,15 +26,19 @@ model User {
 }
 
 model Assessment {
-  id             String   @id @default(cuid())
-  userId         String
-  category       String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  improvementTip String?
-  questions      Json[]
-  quizScore      Float
-  user           User     @relation(fields: [userId], references: [id])
+  id                  String   @id @default(cuid())
+  userId              String
+  category            String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  improvementTip      String?
+  questions           Json[]
+  quizScore           Float
+  timeSpent           Int      @default(0) // Time spent in seconds
+  difficultyBreakdown Json?    // Detailed breakdown by difficulty
+  totalQuestions      Int      @default(0)
+  correctAnswers      Int      @default(0)
+  user                User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
