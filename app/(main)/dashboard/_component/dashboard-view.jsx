@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import {
   BriefcaseIcon,
@@ -20,28 +20,43 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
-// Lazy load heavy chart components
-const BarChart = dynamic(() => import("recharts").then(mod => ({ default: mod.BarChart })), { ssr: false });
-const Bar = dynamic(() => import("recharts").then(mod => ({ default: mod.Bar })), { ssr: false });
-const XAxis = dynamic(() => import("recharts").then(mod => ({ default: mod.XAxis })), { ssr: false });
-const YAxis = dynamic(() => import("recharts").then(mod => ({ default: mod.YAxis })), { ssr: false });
-const CartesianGrid = dynamic(() => import("recharts").then(mod => ({ default: mod.CartesianGrid })), { ssr: false });
-const Tooltip = dynamic(() => import("recharts").then(mod => ({ default: mod.Tooltip })), { ssr: false });
-const ResponsiveContainer = dynamic(() => import("recharts").then(mod => ({ default: mod.ResponsiveContainer })), { ssr: false });
+// Lazy load heavy chart components with proper fallbacks
+const ChartComponents = dynamic(() => import("./chart-components"), { 
+  ssr: false,
+  loading: () => <div className="h-[400px] bg-muted animate-pulse rounded" />
+});
 
 const DashboardView = ({ insights }) => {
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Debug logging
+  useEffect(() => {
+    console.log("DashboardView received insights:", insights);
+    console.log("Insights type:", typeof insights);
+    console.log("Insights keys:", insights ? Object.keys(insights) : "null");
+  }, [insights]);
+
   // Memoize expensive data transformations
   const salaryData = useMemo(() => {
+    if (!insights?.salaryRanges) {
+      console.log("No salary ranges found in insights");
+      return [];
+    }
+    console.log("Processing salary ranges:", insights.salaryRanges);
     return insights.salaryRanges.map((range) => ({
       name: range.role,
       min: range.min / 1000,
       max: range.max / 1000,
       median: range.median / 1000,
     }));
-  }, [insights.salaryRanges]);
+  }, [insights?.salaryRanges]);
 
   const getDemandLevelColor = (level) => {
-    switch (level.toLowerCase()) {
+    switch (level?.toLowerCase()) {
       case "high":
         return "bg-green-500";
       case "medium":
@@ -54,7 +69,7 @@ const DashboardView = ({ insights }) => {
   };
 
   const getMarketOutlookInfo = (level) => {
-    switch (level.toLowerCase()) {
+    switch (level?.toLowerCase()) {
       case "positive":
         return { icon: TrendingUp, color: "text-green-500" };
       case "neutral":
@@ -66,18 +81,44 @@ const DashboardView = ({ insights }) => {
     }
   };
 
-  const OutlookIcon = getMarketOutlookInfo(insights.marketOutlook).icon;
-  const outlookColor = getMarketOutlookInfo(insights.marketOutlook).color;
+  const OutlookIcon = getMarketOutlookInfo(insights?.marketOutlook).icon;
+  const outlookColor = getMarketOutlookInfo(insights?.marketOutlook).color;
 
   // Memoize formatted dates
   const { lastUpdatedDate, nextUpdateDistance } = useMemo(() => {
-    const lastUpdated = format(new Date(insights.lastUpdated), "dd/MM/yyyy");
-    const nextUpdate = formatDistanceToNow(
-      new Date(insights.nextUpdate),
-      { addSuffix: true }
+    if (!insights?.lastUpdated || !insights?.nextUpdate) {
+      console.log("Missing date data:", { lastUpdated: insights?.lastUpdated, nextUpdate: insights?.nextUpdate });
+      return { lastUpdatedDate: "N/A", nextUpdateDistance: "N/A" };
+    }
+    
+    try {
+      const lastUpdated = format(new Date(insights.lastUpdated), "dd/MM/yyyy");
+      const nextUpdate = formatDistanceToNow(
+        new Date(insights.nextUpdate),
+        { addSuffix: true }
+      );
+      return { lastUpdatedDate: lastUpdated, nextUpdateDistance: nextUpdate };
+    } catch (error) {
+      console.error("Date formatting error:", error);
+      return { lastUpdatedDate: "N/A", nextUpdateDistance: "N/A" };
+    }
+  }, [insights?.lastUpdated, insights?.nextUpdate]);
+
+  // Safety check for insights
+  if (!insights) {
+    console.log("No insights data provided to DashboardView");
+    return (
+      <div className="space-y-6">
+        <div className="text-center py-12">
+          <h2 className="text-xl font-semibold text-muted-foreground">
+            Loading industry insights...
+          </h2>
+        </div>
+      </div>
     );
-    return { lastUpdatedDate: lastUpdated, nextUpdateDistance: nextUpdate };
-  }, [insights.lastUpdated, insights.nextUpdate]);
+  }
+
+  console.log("Rendering dashboard with salary data:", salaryData);
 
   return (
     <div className="space-y-6">
@@ -95,7 +136,7 @@ const DashboardView = ({ insights }) => {
             <OutlookIcon className={`h-4 w-4 ${outlookColor}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{insights.marketOutlook}</div>
+            <div className="text-2xl font-bold">{insights.marketOutlook || "N/A"}</div>
             <p className="text-xs text-muted-foreground">
               Next update {nextUpdateDistance}
             </p>
@@ -111,9 +152,9 @@ const DashboardView = ({ insights }) => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {insights.growthRate.toFixed(1)}%
+              {insights.growthRate ? `${insights.growthRate.toFixed(1)}%` : "N/A"}
             </div>
-            <Progress value={insights.growthRate} className="mt-2" />
+            <Progress value={insights.growthRate || 0} className="mt-2" />
           </CardContent>
         </Card>
 
@@ -123,7 +164,7 @@ const DashboardView = ({ insights }) => {
             <BriefcaseIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{insights.demandLevel}</div>
+            <div className="text-2xl font-bold">{insights.demandLevel || "N/A"}</div>
             <div
               className={`h-2 w-full rounded-full mt-2 ${getDemandLevelColor(
                 insights.demandLevel
@@ -139,11 +180,11 @@ const DashboardView = ({ insights }) => {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-1">
-              {insights.topSkills.map((skill) => (
-                <Badge key={skill} variant="secondary">
+              {insights.topSkills?.map((skill, index) => (
+                <Badge key={index} variant="secondary">
                   {skill}
                 </Badge>
-              ))}
+              )) || <span className="text-muted-foreground">No skills data</span>}
             </div>
           </CardContent>
         </Card>
@@ -158,35 +199,15 @@ const DashboardView = ({ insights }) => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salaryData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      return (
-                        <div className="bg-background border rounded-lg p-2 shadow-md">
-                          <p className="font-medium">{label}</p>
-                          {payload.map((item) => (
-                            <p key={item.name} className="text-sm">
-                              {item.name}: ${item.value}K
-                            </p>
-                          ))}
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar dataKey="min" fill="#94a3b8" name="Min Salary (K)" />
-                <Bar dataKey="median" fill="#64748b" name="Median Salary (K)" />
-                <Bar dataKey="max" fill="#475569" name="Max Salary (K)" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {isClient && salaryData.length > 0 ? (
+            <ChartComponents salaryData={salaryData} />
+          ) : (
+            <div className="h-[400px] bg-muted animate-pulse rounded flex items-center justify-center">
+              <span className="text-muted-foreground">
+                {salaryData.length === 0 ? "No salary data available" : "Loading chart..."}
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -201,12 +222,12 @@ const DashboardView = ({ insights }) => {
           </CardHeader>
           <CardContent>
             <ul className="space-y-4">
-              {insights.keyTrends.map((trend, index) => (
+              {insights.keyTrends?.map((trend, index) => (
                 <li key={index} className="flex items-start space-x-2">
                   <div className="h-2 w-2 mt-2 rounded-full bg-primary" />
                   <span>{trend}</span>
                 </li>
-              ))}
+              )) || <li className="text-muted-foreground">No trends data available</li>}
             </ul>
           </CardContent>
         </Card>
@@ -218,11 +239,11 @@ const DashboardView = ({ insights }) => {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {insights.recommendedSkills.map((skill) => (
+              {insights.recommendedSkills?.map((skill) => (
                 <Badge key={skill} variant="outline">
                   {skill}
                 </Badge>
-              ))}
+              )) || <span className="text-muted-foreground">No skills data available</span>}
             </div>
           </CardContent>
         </Card>

@@ -99,10 +99,15 @@ export const generateAIInsights = async (industry) => {
 
 export async function getIndustryInsights() {
   try {
+    console.log("getIndustryInsights called");
+    
     const { userId } = await auth();
     if (!userId) {
+      console.log("No userId found in auth");
       throw new Error("Authentication required. Please sign in again.");
     }
+
+    console.log("User authenticated:", userId);
 
     const user = await db.user.findUnique({
       where: { clerkUserId: userId },
@@ -111,18 +116,25 @@ export async function getIndustryInsights() {
       },
     });
 
+    console.log("User found:", user ? { id: user.id, industry: user.industry } : "null");
+
     if (!user) {
       throw new Error("User profile not found. Please complete onboarding first.");
     }
 
     if (!user.industry) {
+      console.log("User has no industry set");
       throw new Error("Industry not set. Please complete your profile first.");
     }
 
+    console.log("User industry:", user.industry);
+
     // If no insights exist, generate them
     if (!user.industryInsight) {
+      console.log("No industry insights found, generating new ones...");
       try {
         const insights = await generateAIInsights(user.industry);
+        console.log("Generated insights:", insights);
 
         const industryInsight = await db.industryInsight.create({
           data: {
@@ -132,6 +144,7 @@ export async function getIndustryInsights() {
           },
         });
 
+        console.log("Created industry insight:", industryInsight.id);
         return industryInsight;
       } catch (aiError) {
         console.error("Failed to generate AI insights:", aiError);
@@ -139,6 +152,7 @@ export async function getIndustryInsights() {
       }
     }
 
+    console.log("Returning existing insights:", user.industryInsight.id);
     return user.industryInsight;
   } catch (error) {
     console.error("Error getting industry insights:", error);
