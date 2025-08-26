@@ -9,7 +9,7 @@ import { dark } from "@clerk/themes";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "AI Career Coach",
+  title: "Sens-AI : A Career Coach",
   description: "",
 };
 
@@ -36,9 +36,17 @@ export default function RootLayout({ children }) {
             <main className="min-h-screen">{children}</main>
             <Toaster richColors />
 
-            <footer className="bg-muted/50 py-12">
-              <div className="container mx-auto px-4 text-center text-gray-200">
-                <p>Made with 💗 by RoadsideCoder</p>
+            <footer className="border-t bg-background/70 py-10">
+              <div className="container mx-auto px-4 flex flex-col items-center gap-3 text-muted-foreground">
+                <div className="flex items-center gap-2 text-sm">
+                  <span>© {new Date().getFullYear()}</span>
+                  <span className="text-foreground font-semibold">Sens-AI </span>
+                  <span>• All rights reserved.</span>
+                </div>
+                <div className="h-px w-24 bg-muted/70" />
+                <p className="text-center text-xs md:text-sm max-w-2xl">
+                  Built with 💗 by Sourabh Kumar.
+                </p>
               </div>
             </footer>
           </ThemeProvider>
