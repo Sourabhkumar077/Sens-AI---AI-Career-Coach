@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
 import Header from "@/components/header";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ClerkErrorBoundary } from "@/components/clerk-error-boundary";
 import { dark } from "@clerk/themes";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -32,23 +33,25 @@ export default function RootLayout({ children }) {
             disableTransitionOnChange
             storageKey="sensai-theme"
           >
-            <Header />
-            <main className="min-h-screen">{children}</main>
-            <Toaster richColors />
+            <ClerkErrorBoundary>
+              <Header />
+              <main className="min-h-screen">{children}</main>
+              <Toaster richColors />
 
-            <footer className="border-t bg-background/70 py-10">
-              <div className="container mx-auto px-4 flex flex-col items-center gap-3 text-muted-foreground">
-                <div className="flex items-center gap-2 text-sm">
-                  <span>© {new Date().getFullYear()}</span>
-                  <span className="text-foreground font-semibold">Sens-AI </span>
-                  <span>• All rights reserved.</span>
+              <footer className="border-t bg-background/70 py-10">
+                <div className="container mx-auto px-4 flex flex-col items-center gap-3 text-muted-foreground">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span>© {new Date().getFullYear()}</span>
+                    <span className="text-foreground font-semibold">Sens-AI </span>
+                    <span>• All rights reserved.</span>
+                  </div>
+                  <div className="h-px w-24 bg-muted/70" />
+                  <p className="text-center text-xs md:text-sm max-w-2xl">
+                    Built with 💗 by Sourabh Kumar.
+                  </p>
                 </div>
-                <div className="h-px w-24 bg-muted/70" />
-                <p className="text-center text-xs md:text-sm max-w-2xl">
-                  Built with 💗 by Sourabh Kumar.
-                </p>
-              </div>
-            </footer>
+              </footer>
+            </ClerkErrorBoundary>
           </ThemeProvider>
         </body>
       </html>
