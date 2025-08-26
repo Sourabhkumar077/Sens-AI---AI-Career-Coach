@@ -170,106 +170,186 @@ export async function generateQuizByDifficulty(difficulty = 'medium', questionCo
 }
 
 export async function saveQuizResult(questions, answers, score, timeSpent = 0) {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
-
-  if (!user) throw new Error("User not found");
-
-  const questionResults = questions.map((q, index) => ({
-    question: q.question,
-    answer: q.correctAnswer,
-    userAnswer: answers[index],
-    isCorrect: q.correctAnswer === answers[index],
-    explanation: q.explanation,
-    difficulty: q.difficulty || 'medium',
-    category: q.category || 'Technical',
-    timeEstimate: q.timeEstimate || 60,
-  }));
-
-  // Calculate detailed analytics
-  const totalQuestions = questions.length;
-  const correctAnswers = questionResults.filter(q => q.isCorrect).length;
-  const wrongAnswers = questionResults.filter(q => !q.isCorrect);
-  
-  // Difficulty breakdown
-  const difficultyBreakdown = {
-    easy: { total: 0, correct: 0, score: 0 },
-    medium: { total: 0, correct: 0, score: 0 },
-    hard: { total: 0, correct: 0, score: 0 }
-  };
-
-  questionResults.forEach(q => {
-    const diff = q.difficulty.toLowerCase();
-    if (difficultyBreakdown[diff]) {
-      difficultyBreakdown[diff].total++;
-      if (q.isCorrect) {
-        difficultyBreakdown[diff].correct++;
-      }
-    }
-  });
-
-  // Calculate scores per difficulty
-  Object.keys(difficultyBreakdown).forEach(diff => {
-    if (difficultyBreakdown[diff].total > 0) {
-      difficultyBreakdown[diff].score = (difficultyBreakdown[diff].correct / difficultyBreakdown[diff].total) * 100;
-    }
-  });
-
-  // Get wrong answers for improvement tips
-  let improvementTip = null;
-  if (wrongAnswers.length > 0) {
-    const wrongQuestionsText = wrongAnswers
-      .map(
-        (q) =>
-          `Question: "${q.question}"\nCorrect Answer: "${q.answer}"\nUser Answer: "${q.userAnswer}"\nDifficulty: ${q.difficulty}`
-      )
-      .join("\n\n");
-
-    const improvementPrompt = `
-      The user got the following ${user.industry} technical interview questions wrong:
-
-      ${wrongQuestionsText}
-
-      Based on these mistakes, provide a concise, specific improvement tip.
-      Focus on the knowledge gaps revealed by these wrong answers.
-      Keep the response under 2 sentences and make it encouraging.
-      Don't explicitly mention the mistakes, instead focus on what to learn/practice.
-      Consider the difficulty levels when giving advice.
-    `;
-
-    try {
-      const tipResult = await model.generateContent(improvementPrompt);
-      improvementTip = tipResult.response.text().trim();
-      console.log(improvementTip);
-    } catch (error) {
-      console.error("Error generating improvement tip:", error);
-      // Continue without improvement tip if generation fails
-    }
-  }
-
   try {
-    const assessment = await db.assessment.create({
-      data: {
-        userId: user.id,
-        quizScore: score,
-        questions: questionResults,
-        category: "Technical",
-        improvementTip,
-        timeSpent: timeSpent || 0,
-        difficultyBreakdown: difficultyBreakdown,
-        totalQuestions,
-        correctAnswers,
-      },
+    console.log("saveQuizResult called with:", {
+      questionsCount: questions?.length,
+      answersCount: answers?.length,
+      score,
+      timeSpent,
+      hasQuestions: !!questions,
+      hasAnswers: !!answers
     });
 
+    // Test database connection
+    try {
+      await db.$queryRaw`SELECT 1`;
+      console.log("Database connection test successful");
+    } catch (dbError) {
+      console.error("Database connection test failed:", dbError);
+      throw new Error("Database connection failed. Please try again.");
+    }
+
+    const { userId } = await auth();
+    if (!userId) throw new Error("Unauthorized");
+
+    const user = await db.user.findUnique({
+      where: { clerkUserId: userId },
+    });
+
+    if (!user) throw new Error("User not found");
+
+    console.log("User found:", { id: user.id, industry: user.industry });
+
+    const questionResults = questions.map((q, index) => ({
+      question: q.question,
+      answer: q.correctAnswer,
+      userAnswer: answers[index],
+      isCorrect: q.correctAnswer === answers[index],
+      explanation: q.explanation,
+      difficulty: q.difficulty || 'medium',
+      category: q.category || 'Technical',
+      timeEstimate: q.timeEstimate || 60,
+    }));
+
+    console.log("Question results processed:", questionResults.length);
+
+    // Calculate detailed analytics
+    const totalQuestions = questions.length;
+    const correctAnswers = questionResults.filter(q => q.isCorrect).length;
+    const wrongAnswers = questionResults.filter(q => !q.isCorrect);
+    
+    console.log("Analytics calculated:", { totalQuestions, correctAnswers, wrongAnswersCount: wrongAnswers.length });
+    
+    // Difficulty breakdown
+    const difficultyBreakdown = {
+      easy: { total: 0, correct: 0, score: 0 },
+      medium: { total: 0, correct: 0, score: 0 },
+      hard: { total: 0, correct: 0, score: 0 }
+    };
+
+    questionResults.forEach(q => {
+      const diff = q.difficulty.toLowerCase();
+      if (difficultyBreakdown[diff]) {
+        difficultyBreakdown[diff].total++;
+        if (q.isCorrect) {
+          difficultyBreakdown[diff].correct++;
+        }
+      }
+    });
+
+    console.log("Difficulty breakdown:", difficultyBreakdown);
+
+    // Calculate scores per difficulty
+    Object.keys(difficultyBreakdown).forEach(diff => {
+      if (difficultyBreakdown[diff].total > 0) {
+        difficultyBreakdown[diff].score = (difficultyBreakdown[diff].correct / difficultyBreakdown[diff].total) * 100;
+      }
+    });
+
+    // Get wrong answers for improvement tips
+    let improvementTip = null;
+    if (wrongAnswers.length > 0) {
+      const wrongQuestionsText = wrongAnswers
+        .map(
+          (q) =>
+            `Question: "${q.question}"\nCorrect Answer: "${q.answer}"\nUser Answer: "${q.userAnswer}"\nDifficulty: ${q.difficulty}`
+        )
+        .join("\n\n");
+
+      const improvementPrompt = `
+        The user got the following ${user.industry} technical interview questions wrong:
+
+        ${wrongQuestionsText}
+
+        Based on these mistakes, provide a concise, specific improvement tip.
+        Focus on the knowledge gaps revealed by these wrong answers.
+        Keep the response under 2 sentences and make it encouraging.
+        Don't explicitly mention the mistakes, instead focus on what to learn/practice.
+        Consider the difficulty levels when giving advice.
+      `;
+
+      try {
+        const tipResult = await model.generateContent(improvementPrompt);
+        improvementTip = tipResult.response.text().trim();
+        console.log("Improvement tip generated:", improvementTip);
+      } catch (error) {
+        console.error("Error generating improvement tip:", error);
+        // Continue without improvement tip if generation fails
+      }
+    }
+
+    console.log("About to save assessment with data:", {
+      userId: user.id,
+      quizScore: score,
+      questionsCount: questionResults.length,
+      hasImprovementTip: !!improvementTip,
+      timeSpent,
+      hasDifficultyBreakdown: !!difficultyBreakdown,
+      totalQuestions,
+      correctAnswers
+    });
+
+    // Create assessment with only the fields that definitely exist
+    const assessmentData = {
+      userId: user.id,
+      quizScore: score,
+      questions: questionResults,
+      category: "Technical",
+      improvementTip,
+    };
+
+    // Only add new fields if they exist and have values
+    if (timeSpent !== undefined && timeSpent !== null) {
+      assessmentData.timeSpent = timeSpent;
+    }
+    
+    if (difficultyBreakdown && Object.keys(difficultyBreakdown).length > 0) {
+      assessmentData.difficultyBreakdown = difficultyBreakdown;
+    }
+    
+    if (totalQuestions !== undefined && totalQuestions !== null) {
+      assessmentData.totalQuestions = totalQuestions;
+    }
+    
+    if (correctAnswers !== undefined && correctAnswers !== null) {
+      assessmentData.correctAnswers = correctAnswers;
+    }
+
+    console.log("Final assessment data:", assessmentData);
+
+    const assessment = await db.assessment.create({
+      data: assessmentData,
+    });
+
+    console.log("Assessment saved successfully:", assessment.id);
     return assessment;
   } catch (error) {
     console.error("Error saving quiz result:", error);
-    throw new Error("Failed to save quiz result");
+    
+    // Try to save with minimal data if the enhanced save fails
+    try {
+      console.log("Attempting fallback save with minimal data...");
+      const fallbackAssessment = await db.assessment.create({
+        data: {
+          userId: user.id,
+          quizScore: score,
+          questions: questions.map((q, index) => ({
+            question: q.question,
+            answer: q.correctAnswer,
+            userAnswer: answers[index],
+            isCorrect: q.correctAnswer === answers[index],
+            explanation: q.explanation,
+          })),
+          category: "Technical",
+          improvementTip: null,
+        },
+      });
+      console.log("Fallback save successful");
+      return fallbackAssessment;
+    } catch (fallbackError) {
+      console.error("Fallback save also failed:", fallbackError);
+      throw new Error("Failed to save quiz result. Please try again.");
+    }
   }
 }
 
