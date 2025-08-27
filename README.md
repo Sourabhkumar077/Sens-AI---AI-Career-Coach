@@ -1,6 +1,6 @@
 # Sens-AI: An AI-Powered Career Coach
 
-![Sens-AI Banner](./public/banner.jpeg)
+![Sens-AI Banner](./public/banner2.jpeg)
 
 ## About This Project
 
