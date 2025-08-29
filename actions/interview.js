@@ -3,38 +3,42 @@
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { decrypt } from "@/lib/crypto";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Helper function to get user and initialize the AI model with the user's key
+async function getModelForUser(clerkUserId) {
+  const user = await db.user.findUnique({
+    where: { clerkUserId },
+    select: { id: true, industry: true, skills: true, geminiApiKey: true },
+  });
+
+  if (!user) throw new Error("User not found");
+
+  if (!user.geminiApiKey) {
+    throw new Error("Please add your Gemini API Key in the settings page first.");
+  }
+  
+  const userApiKey = decrypt(user.geminiApiKey);
+  const genAI = new GoogleGenerativeAI(userApiKey);
+  return { model: genAI.getGenerativeModel({ model: "gemini-1.5-flash" }), user };
+}
 
 export async function generateQuiz() {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-    select: {
-      industry: true,
-      skills: true,
-    },
-  });
+  try {
+    const { model, user } = await getModelForUser(userId);
 
-  if (!user) throw new Error("User not found");
+    const previousAssessments = await db.assessment.findMany({
+      where: { userId: user.id },
+      select: { questions: true },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    });
+    const previousQuestions = previousAssessments.flatMap(assessment => assessment.questions).map(q => q.question).filter(Boolean);
 
-  // Get user's previous questions to avoid repetition
-  const previousAssessments = await db.assessment.findMany({
-    where: { userId: user.id },
-    select: { questions: true },
-    orderBy: { createdAt: 'desc' },
-    take: 5, // Check last 5 assessments
-  });
-
-  const previousQuestions = previousAssessments
-    .flatMap(assessment => assessment.questions)
-    .map(q => q.question)
-    .filter(Boolean);
-
-  const prompt = `
+    const prompt = `
     Generate 25 technical interview questions for a ${
       user.industry
     } professional${
@@ -73,14 +77,12 @@ export async function generateQuiz() {
     }
   `;
 
-  try {
     const result = await model.generateContent(prompt);
     const response = result.response;
     const text = response.text();
     const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
     const quiz = JSON.parse(cleanedText);
 
-    // Validate and enhance the quiz data
     const enhancedQuestions = quiz.questions.map((q, index) => ({
       ...q,
       id: `q_${Date.now()}_${index}`,
@@ -92,7 +94,10 @@ export async function generateQuiz() {
     return enhancedQuestions;
   } catch (error) {
     console.error("Error generating quiz:", error);
-    throw new Error("Failed to generate quiz questions");
+    if (error.message.includes('API key not valid')) {
+       throw new Error("Your Gemini API Key is not valid. Please check it in settings.");
+    }
+    throw new Error("Failed to generate quiz. Your API key might be invalid or has exceeded its limit.");
   }
 }
 
@@ -100,17 +105,10 @@ export async function generateQuizByDifficulty(difficulty = 'medium', questionCo
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-    select: {
-      industry: true,
-      skills: true,
-    },
-  });
-
-  if (!user) throw new Error("User not found");
-
-  const prompt = `
+  try {
+    const { model, user } = await getModelForUser(userId);
+    
+    const prompt = `
     Generate ${questionCount} ${difficulty} difficulty technical interview questions for a ${
       user.industry
     } professional${
@@ -146,14 +144,12 @@ export async function generateQuizByDifficulty(difficulty = 'medium', questionCo
     }
   `;
 
-  try {
     const result = await model.generateContent(prompt);
     const response = result.response;
     const text = response.text();
     const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
     const quiz = JSON.parse(cleanedText);
 
-    // Validate and enhance the quiz data
     const enhancedQuestions = quiz.questions.map((q, index) => ({
       ...q,
       id: `q_${Date.now()}_${index}`,
@@ -165,40 +161,19 @@ export async function generateQuizByDifficulty(difficulty = 'medium', questionCo
     return enhancedQuestions;
   } catch (error) {
     console.error("Error generating difficulty-specific quiz:", error);
+    if (error.message.includes('API key not valid')) {
+       throw new Error("Your Gemini API Key is not valid. Please check it in settings.");
+    }
     throw new Error("Failed to generate quiz questions");
   }
 }
 
 export async function saveQuizResult(questions, answers, score, timeSpent = 0) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
   try {
-    console.log("saveQuizResult called with:", {
-      questionsCount: questions?.length,
-      answersCount: answers?.length,
-      score,
-      timeSpent,
-      hasQuestions: !!questions,
-      hasAnswers: !!answers
-    });
-
-    // Test database connection
-    try {
-      await db.$queryRaw`SELECT 1`;
-      console.log("Database connection test successful");
-    } catch (dbError) {
-      console.error("Database connection test failed:", dbError);
-      throw new Error("Database connection failed. Please try again.");
-    }
-
-    const { userId } = await auth();
-    if (!userId) throw new Error("Unauthorized");
-
-    const user = await db.user.findUnique({
-      where: { clerkUserId: userId },
-    });
-
-    if (!user) throw new Error("User not found");
-
-    console.log("User found:", { id: user.id, industry: user.industry });
+    const { model, user } = await getModelForUser(userId);
 
     const questionResults = questions.map((q, index) => ({
       question: q.question,
@@ -211,16 +186,10 @@ export async function saveQuizResult(questions, answers, score, timeSpent = 0) {
       timeEstimate: q.timeEstimate || 60,
     }));
 
-    console.log("Question results processed:", questionResults.length);
-
-    // Calculate detailed analytics
     const totalQuestions = questions.length;
     const correctAnswers = questionResults.filter(q => q.isCorrect).length;
     const wrongAnswers = questionResults.filter(q => !q.isCorrect);
     
-    console.log("Analytics calculated:", { totalQuestions, correctAnswers, wrongAnswersCount: wrongAnswers.length });
-    
-    // Difficulty breakdown
     const difficultyBreakdown = {
       easy: { total: 0, correct: 0, score: 0 },
       medium: { total: 0, correct: 0, score: 0 },
@@ -237,16 +206,12 @@ export async function saveQuizResult(questions, answers, score, timeSpent = 0) {
       }
     });
 
-    console.log("Difficulty breakdown:", difficultyBreakdown);
-
-    // Calculate scores per difficulty
     Object.keys(difficultyBreakdown).forEach(diff => {
       if (difficultyBreakdown[diff].total > 0) {
         difficultyBreakdown[diff].score = (difficultyBreakdown[diff].correct / difficultyBreakdown[diff].total) * 100;
       }
     });
 
-    // Get wrong answers for improvement tips
     let improvementTip = null;
     if (wrongAnswers.length > 0) {
       const wrongQuestionsText = wrongAnswers
@@ -271,85 +236,31 @@ export async function saveQuizResult(questions, answers, score, timeSpent = 0) {
       try {
         const tipResult = await model.generateContent(improvementPrompt);
         improvementTip = tipResult.response.text().trim();
-        console.log("Improvement tip generated:", improvementTip);
       } catch (error) {
         console.error("Error generating improvement tip:", error);
-        // Continue without improvement tip if generation fails
       }
     }
 
-    console.log("About to save assessment with data:", {
-      userId: user.id,
-      quizScore: score,
-      questionsCount: questionResults.length,
-      hasImprovementTip: !!improvementTip,
-      timeSpent,
-      hasDifficultyBreakdown: !!difficultyBreakdown,
-      totalQuestions,
-      correctAnswers
-    });
-
-    // Create assessment with only the fields that definitely exist
     const assessmentData = {
       userId: user.id,
       quizScore: score,
       questions: questionResults,
       category: "Technical",
       improvementTip,
+      timeSpent,
+      difficultyBreakdown,
+      totalQuestions,
+      correctAnswers,
     };
-
-    // Only add new fields if they exist and have values
-    if (timeSpent !== undefined && timeSpent !== null) {
-      assessmentData.timeSpent = timeSpent;
-    }
-    
-    if (difficultyBreakdown && Object.keys(difficultyBreakdown).length > 0) {
-      assessmentData.difficultyBreakdown = difficultyBreakdown;
-    }
-    
-    if (totalQuestions !== undefined && totalQuestions !== null) {
-      assessmentData.totalQuestions = totalQuestions;
-    }
-    
-    if (correctAnswers !== undefined && correctAnswers !== null) {
-      assessmentData.correctAnswers = correctAnswers;
-    }
-
-    console.log("Final assessment data:", assessmentData);
 
     const assessment = await db.assessment.create({
       data: assessmentData,
     });
 
-    console.log("Assessment saved successfully:", assessment.id);
     return assessment;
   } catch (error) {
     console.error("Error saving quiz result:", error);
-    
-    // Try to save with minimal data if the enhanced save fails
-    try {
-      console.log("Attempting fallback save with minimal data...");
-      const fallbackAssessment = await db.assessment.create({
-        data: {
-          userId: user.id,
-          quizScore: score,
-          questions: questions.map((q, index) => ({
-            question: q.question,
-            answer: q.correctAnswer,
-            userAnswer: answers[index],
-            isCorrect: q.correctAnswer === answers[index],
-            explanation: q.explanation,
-          })),
-          category: "Technical",
-          improvementTip: null,
-        },
-      });
-      console.log("Fallback save successful");
-      return fallbackAssessment;
-    } catch (fallbackError) {
-      console.error("Fallback save also failed:", fallbackError);
-      throw new Error("Failed to save quiz result. Please try again.");
-    }
+    throw new Error("Failed to save quiz result. Please try again.");
   }
 }
 
@@ -404,13 +315,11 @@ export async function getAssessmentStats() {
       };
     }
 
-    // Calculate comprehensive stats
     const totalQuizzes = assessments.length;
     const averageScore = assessments.reduce((sum, a) => sum + a.quizScore, 0) / totalQuizzes;
     const bestScore = Math.max(...assessments.map(a => a.quizScore));
     const totalQuestions = assessments.reduce((sum, a) => sum + (a.totalQuestions || 0), 0);
 
-    // Difficulty breakdown
     const difficultyBreakdown = { easy: 0, medium: 0, hard: 0 };
     assessments.forEach(a => {
       if (a.difficultyBreakdown) {
@@ -422,7 +331,6 @@ export async function getAssessmentStats() {
       }
     });
 
-    // Category breakdown
     const categoryBreakdown = {};
     assessments.forEach(a => {
       if (a.questions) {
@@ -433,7 +341,6 @@ export async function getAssessmentStats() {
       }
     });
 
-    // Improvement trend (compare last 3 vs previous 3)
     let improvementTrend = 0;
     if (assessments.length >= 6) {
       const recent = assessments.slice(0, 3);

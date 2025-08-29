@@ -1,4 +1,3 @@
-// app/resume/_components/entry-form.jsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -16,10 +15,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { entrySchema } from "@/app/lib/schema";
-import { Sparkles, PlusCircle, X, Pencil, Save, Loader2 } from "lucide-react";
+import { Sparkles, PlusCircle, X, Loader2 } from "lucide-react";
 import { improveWithAI } from "@/actions/resume";
 import { toast } from "sonner";
 import useFetch from "@/hooks/use-fetch";
+import { useRouter } from "next/navigation";
 
 const formatDisplayDate = (dateString) => {
   if (!dateString) return "";
@@ -28,6 +28,7 @@ const formatDisplayDate = (dateString) => {
 };
 
 export function EntryForm({ type, entries, onChange }) {
+  const router = useRouter();
   const [isAdding, setIsAdding] = useState(false);
 
   const {
@@ -76,18 +77,15 @@ export function EntryForm({ type, entries, onChange }) {
     error: improveError,
   } = useFetch(improveWithAI);
 
-  // Add this effect to handle the improvement result
+  // Effect to handle the API call result
   useEffect(() => {
     if (improvedContent && !isImproving) {
       setValue("description", improvedContent);
       toast.success("Description improved successfully!");
     }
-    if (improveError) {
-      toast.error(improveError.message || "Failed to improve description");
-    }
-  }, [improvedContent, improveError, isImproving, setValue]);
+    // Error is now handled inside the catch block of handleImproveDescription
+  }, [improvedContent, isImproving, setValue]);
 
-  // Replace handleImproveDescription with this
   const handleImproveDescription = async () => {
     const description = watch("description");
     if (!description) {
@@ -95,11 +93,44 @@ export function EntryForm({ type, entries, onChange }) {
       return;
     }
 
-    await improveWithAIFn({
-      current: description,
-      type: type.toLowerCase(), // 'experience', 'education', or 'project'
-    });
+    try {
+      // The actual API call is triggered by useFetch's fn
+      await improveWithAIFn({
+        current: description,
+        type: type.toLowerCase(),
+      });
+    } catch (error) {
+        // This catch block will handle network errors or other unexpected issues
+        // The specific API error (like invalid key) is handled by the hook's state
+        if (error.message.includes("Please add your Gemini API Key")) {
+            toast.error("API Key is required to use this feature.", {
+                action: {
+                    label: "Go to Settings",
+                    onClick: () => router.push('/settings'),
+                },
+            });
+        } else {
+            toast.error(error.message || "Failed to improve description");
+        }
+    }
   };
+
+  // This effect handles the error state from the useFetch hook
+  useEffect(() => {
+    if (improveError) {
+        if (improveError.message.includes("Please add your Gemini API Key")) {
+            toast.error("API Key is required to use this feature.", {
+                action: {
+                    label: "Go to Settings",
+                    onClick: () => router.push('/settings'),
+                },
+            });
+        } else {
+            toast.error(improveError.message || "Failed to improve description");
+        }
+    }
+  }, [improveError, router]);
+
 
   return (
     <div className="space-y-4">
@@ -144,7 +175,6 @@ export function EntryForm({ type, entries, onChange }) {
                 <Input
                   placeholder="Title/Position"
                   {...register("title")}
-                  error={errors.title}
                 />
                 {errors.title && (
                   <p className="text-sm text-red-500">{errors.title.message}</p>
@@ -154,7 +184,6 @@ export function EntryForm({ type, entries, onChange }) {
                 <Input
                   placeholder="Organization/Company"
                   {...register("organization")}
-                  error={errors.organization}
                 />
                 {errors.organization && (
                   <p className="text-sm text-red-500">
@@ -169,7 +198,6 @@ export function EntryForm({ type, entries, onChange }) {
                 <Input
                   type="month"
                   {...register("startDate")}
-                  error={errors.startDate}
                 />
                 {errors.startDate && (
                   <p className="text-sm text-red-500">
@@ -182,7 +210,6 @@ export function EntryForm({ type, entries, onChange }) {
                   type="month"
                   {...register("endDate")}
                   disabled={current}
-                  error={errors.endDate}
                 />
                 {errors.endDate && (
                   <p className="text-sm text-red-500">
@@ -195,16 +222,10 @@ export function EntryForm({ type, entries, onChange }) {
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
-                id="current"
+                id={`current-${type}`}
                 {...register("current")}
-                onChange={(e) => {
-                  setValue("current", e.target.checked);
-                  if (e.target.checked) {
-                    setValue("endDate", "");
-                  }
-                }}
               />
-              <label htmlFor="current">Current {type}</label>
+              <label htmlFor={`current-${type}`}>Current {type}</label>
             </div>
 
             <div className="space-y-2">
@@ -212,7 +233,6 @@ export function EntryForm({ type, entries, onChange }) {
                 placeholder={`Description of your ${type.toLowerCase()}`}
                 className="h-32"
                 {...register("description")}
-                error={errors.description}
               />
               {errors.description && (
                 <p className="text-sm text-red-500">

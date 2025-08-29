@@ -19,6 +19,7 @@ model User {
   bio             String?
   experience      Int?
   skills          String[]
+  geminiApiKey    String?
   assessments     Assessment[]
   coverLetter     CoverLetter[]
   resume          Resume?

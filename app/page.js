@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import LiveDemo from "@/components/live-demo";
 import {
   ArrowRight,
   Trophy,
@@ -56,6 +57,8 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+       <LiveDemo /> 
 
       {/* Stats Section */}
       <section className="w-full py-12 md:py-24 bg-muted/50">

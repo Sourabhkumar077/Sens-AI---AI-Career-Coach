@@ -3,12 +3,32 @@
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { decrypt } from "@/lib/crypto";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Helper function to get user and initialize the AI model with the user's key
+async function getModelForUser(clerkUserId) {
+  const user = await db.user.findUnique({
+    where: { clerkUserId },
+    select: { id: true, industry: true, skills: true, geminiApiKey: true },
+  });
 
-export const generateAIInsights = async (industry) => {
+  if (!user) throw new Error("User not found");
+
+  if (!user.geminiApiKey) {
+    throw new Error("Please add your Gemini API Key in the settings page first.");
+  }
+  
+  const userApiKey = decrypt(user.geminiApiKey);
+  const genAI = new GoogleGenerativeAI(userApiKey);
+  return { model: genAI.getGenerativeModel({ model: "gemini-1.5-flash" }), user };
+}
+
+
+export const generateAIInsights = async (industry, clerkUserId) => {
   try {
+    // Generate insights using the specific user's API key
+    const { model } = await getModelForUser(clerkUserId);
+
     if (!industry || typeof industry !== 'string') {
       throw new Error("Invalid industry parameter");
     }
@@ -37,77 +57,41 @@ export const generateAIInsights = async (industry) => {
     const response = result.response;
     const text = response.text();
     const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
-
-    try {
-      const parsed = JSON.parse(cleanedText);
-      
-      // Validate the response structure
-      if (!parsed.salaryRanges || !parsed.growthRate || !parsed.demandLevel || 
-          !parsed.topSkills || !parsed.marketOutlook || !parsed.keyTrends || 
-          !parsed.recommendedSkills) {
-        throw new Error("Invalid AI response structure");
-      }
-
-      // Ensure arrays have minimum content
-      if (!Array.isArray(parsed.salaryRanges) || parsed.salaryRanges.length < 3) {
-        throw new Error("Insufficient salary range data");
-      }
-
-      if (!Array.isArray(parsed.topSkills) || parsed.topSkills.length < 3) {
-        throw new Error("Insufficient skills data");
-      }
-
-      return parsed;
-    } catch (parseError) {
-      console.error("AI response parsing failed:", parseError);
-      console.error("Raw AI response:", text);
-      
-      // Return fallback data if AI fails
-      return {
-        salaryRanges: [
-          { role: "Entry Level", min: 40000, max: 60000, median: 50000, location: "General" },
-          { role: "Mid Level", min: 60000, max: 90000, median: 75000, location: "General" },
-          { role: "Senior Level", min: 90000, max: 130000, median: 110000, location: "General" }
-        ],
-        growthRate: 5.0,
-        demandLevel: "Medium",
-        topSkills: ["Communication", "Problem Solving", "Technical Skills"],
-        marketOutlook: "Neutral",
-        keyTrends: ["Digital Transformation", "Remote Work", "Skill Development"],
-        recommendedSkills: ["Data Analysis", "Project Management", "Leadership"]
-      };
+    const parsed = JSON.parse(cleanedText);
+    
+    // Validate the response structure
+    if (!parsed.salaryRanges || !parsed.growthRate || !parsed.demandLevel || 
+        !parsed.topSkills || !parsed.marketOutlook || !parsed.keyTrends || 
+        !parsed.recommendedSkills) {
+      throw new Error("Invalid AI response structure");
     }
+
+    return parsed;
+
   } catch (error) {
     console.error("Error generating AI insights:", error);
-    
-    // Return fallback data
+    if (error.message.includes('API key not valid')) {
+       throw new Error("Your Gemini API Key is not valid. Please check it in settings.");
+    }
+    // Return fallback data if AI call fails
     return {
-      salaryRanges: [
-        { role: "Entry Level", min: 40000, max: 60000, median: 50000, location: "General" },
-        { role: "Mid Level", min: 60000, max: 90000, median: 75000, location: "General" },
-        { role: "Senior Level", min: 90000, max: 130000, median: 110000, location: "General" }
-      ],
-      growthRate: 5.0,
-      demandLevel: "Medium",
-      topSkills: ["Communication", "Problem Solving", "Technical Skills"],
-      marketOutlook: "Neutral",
-      keyTrends: ["Digital Transformation", "Remote Work", "Skill Development"],
-      recommendedSkills: ["Data Analysis", "Project Management", "Leadership"]
+        salaryRanges: [],
+        growthRate: 0,
+        demandLevel: "Medium",
+        topSkills: ["Data unavailable"],
+        marketOutlook: "Neutral",
+        keyTrends: ["Data unavailable"],
+        recommendedSkills: ["Data unavailable"]
     };
   }
 };
 
 export async function getIndustryInsights() {
   try {
-    console.log("getIndustryInsights called");
-    
     const { userId } = await auth();
     if (!userId) {
-      console.log("No userId found in auth");
       throw new Error("Authentication required. Please sign in again.");
     }
-
-    console.log("User authenticated:", userId);
 
     const user = await db.user.findUnique({
       where: { clerkUserId: userId },
@@ -116,43 +100,44 @@ export async function getIndustryInsights() {
       },
     });
 
-    console.log("User found:", user ? { id: user.id, industry: user.industry } : "null");
-
     if (!user) {
       throw new Error("User profile not found. Please complete onboarding first.");
     }
 
     if (!user.industry) {
-      console.log("User has no industry set");
       throw new Error("Industry not set. Please complete your profile first.");
     }
 
-    console.log("User industry:", user.industry);
-
-    // If no insights exist, generate them
     if (!user.industryInsight) {
-      console.log("No industry insights found, generating new ones...");
-      try {
-        const insights = await generateAIInsights(user.industry);
-        console.log("Generated insights:", insights);
+      // Pass the clerkUserId to generate insights with the user's key
+      const insights = await generateAIInsights(user.industry, userId);
 
-        const industryInsight = await db.industryInsight.create({
-          data: {
-            industry: user.industry,
-            ...insights,
-            nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          },
+      // Check if another user already created insights for this industry
+      const existingInsight = await db.industryInsight.findUnique({
+        where: { industry: user.industry },
+      });
+
+      if (existingInsight) {
+        // If it exists, connect the user to it instead of creating a new one
+        await db.user.update({
+            where: { id: user.id },
+            data: { industry: existingInsight.industry }
         });
-
-        console.log("Created industry insight:", industryInsight.id);
-        return industryInsight;
-      } catch (aiError) {
-        console.error("Failed to generate AI insights:", aiError);
-        throw new Error("Failed to generate industry insights. Please try again later.");
+        return existingInsight;
       }
+
+      // If it doesn't exist, create it
+      const newInsight = await db.industryInsight.create({
+        data: {
+          industry: user.industry,
+          ...insights,
+          nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+        },
+      });
+
+      return newInsight;
     }
 
-    console.log("Returning existing insights:", user.industryInsight.id);
     return user.industryInsight;
   } catch (error) {
     console.error("Error getting industry insights:", error);

@@ -4,11 +4,11 @@ import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { revalidatePath } from "next/cache";
+import { decrypt } from "@/lib/crypto"; // Decrypt function ko import karein
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 export async function saveResume(content) {
+  // Is function mein koi change nahi hai kyunki yeh AI use nahi karta
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
@@ -41,6 +41,7 @@ export async function saveResume(content) {
 }
 
 export async function getResume() {
+  // Is function mein bhi koi change nahi hai
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
@@ -70,6 +71,16 @@ export async function improveWithAI({ current, type }) {
 
   if (!user) throw new Error("User not found");
 
+  // ✅ Step 1: User ki API key check, fetch, aur decrypt karein
+  if (!user.geminiApiKey) {
+    throw new Error("Please add your Gemini API Key in the settings page first.");
+  }
+  const userApiKey = decrypt(user.geminiApiKey);
+
+  // ✅ Step 2: User ki key se AI model ko initialize karein
+  const genAI = new GoogleGenerativeAI(userApiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
   const prompt = `
     As an expert resume writer, improve the following ${type} description for a ${user.industry} professional.
     Make it more impactful, quantifiable, and aligned with industry standards.
@@ -93,6 +104,9 @@ export async function improveWithAI({ current, type }) {
     return improvedContent;
   } catch (error) {
     console.error("Error improving content:", error);
-    throw new Error("Failed to improve content");
+    if (error.message.includes('API key not valid')) {
+       throw new Error("Your Gemini API Key is not valid. Please check it in settings.");
+    }
+    throw new Error("Failed to improve content. Your API key might be invalid or has exceeded its limit.");
   }
 }
