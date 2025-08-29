@@ -4,6 +4,7 @@ import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { generateAIInsights } from "./dashboard";
+import { encrypt, decrypt } from "@/lib/crypto";
 
 export async function updateUser(data) {
   try {
@@ -126,4 +127,41 @@ export async function getUserOnboardingStatus() {
       isOnboarded: false,
     };
   }
+}
+
+export async function saveUserApiKey(apiKey) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  
+  if (!apiKey.startsWith("AIzaSy")) {
+    throw new Error("Invalid Gemini API Key format.");
+  }
+
+  const encryptedKey = encrypt(apiKey);
+
+  try {
+    await db.user.update({
+      where: { clerkUserId: userId },
+      data: { geminiApiKey: encryptedKey },
+    });
+
+    revalidatePath("/settings"); // Settings page ko refresh karega
+    return { success: true, message: "API Key saved successfully!" };
+  } catch (error) {
+    console.error("Failed to save API Key:", error);
+    throw new Error("Could not save the API Key. Please try again.");
+  }
+}
+
+export async function getUserApiKeyStatus() {
+  const { userId } = await auth();
+  if (!userId) return { hasApiKey: false };
+
+  const user = await db.user.findUnique({
+    where: { clerkUserId: userId },
+    select: { geminiApiKey: true },
+  });
+
+  return { hasApiKey: !!user?.geminiApiKey };
 }

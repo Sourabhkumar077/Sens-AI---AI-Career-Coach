@@ -3,9 +3,11 @@
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { decrypt } from "@/lib/crypto"; 
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// ❌ Global genAI instance ko yahan se hata dein
+// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 export async function generateCoverLetter(data) {
   const { userId } = await auth();
@@ -14,13 +16,20 @@ export async function generateCoverLetter(data) {
   const user = await db.user.findUnique({
     where: { clerkUserId: userId },
   });
-
   if (!user) throw new Error("User not found");
 
+  // ✅ Step 1: User ki API key check, fetch, aur decrypt karein
+  if (!user.geminiApiKey) {
+    throw new Error("Please add your Gemini API Key in the settings page first.");
+  }
+  const userApiKey = decrypt(user.geminiApiKey);
+
+  // ✅ Step 2: User ki key se AI model ko initialize karein
+  const genAI = new GoogleGenerativeAI(userApiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
   const prompt = `
-    Write a professional cover letter for a ${data.jobTitle} position at ${
-    data.companyName
-  }.
+    Write a professional cover letter for a ${data.jobTitle} position at ${data.companyName}.
     
     About the candidate:
     - Industry: ${user.industry}
@@ -61,11 +70,17 @@ export async function generateCoverLetter(data) {
     return coverLetter;
   } catch (error) {
     console.error("Error generating cover letter:", error.message);
-    throw new Error("Failed to generate cover letter");
+    if (error.message.includes('API key not valid')) {
+       throw new Error("Your Gemini API Key is not valid. Please check it in settings.");
+    }
+    throw new Error("Failed to generate cover letter. Your API key might be invalid or has exceeded its limit.");
   }
 }
 
+// Baaki ke functions (getCoverLetters, getCoverLetter, deleteCoverLetter) waise hi rahenge...
+
 export async function getCoverLetters() {
+  // ... no changes here
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
@@ -86,6 +101,7 @@ export async function getCoverLetters() {
 }
 
 export async function getCoverLetter(id) {
+  // ... no changes here
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
@@ -104,6 +120,7 @@ export async function getCoverLetter(id) {
 }
 
 export async function deleteCoverLetter(id) {
+  // ... no changes here
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
