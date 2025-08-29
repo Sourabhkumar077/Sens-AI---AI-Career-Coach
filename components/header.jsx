@@ -114,7 +114,7 @@ export default async function Header() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon">
-                    <Cog className="h-5 w-5" />
+                    <Cog className="h-10 w-10" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

@@ -29,8 +29,9 @@ export default function TutorialPage() {
                             <p className="text-muted-foreground">
                                 First, open the Google AI Studio website in a new tab by clicking the link below. You'll need to sign in with your Google account.
                             </p>
-                            <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer">
-                                <Button variant="outline">Go to Google AI Studio</Button>
+
+                            <a  href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer">
+                                <Button  className="mt-3" variant="outline">Go to Google AI Studio</Button>
                             </a>
                         </li>
 
@@ -41,9 +42,8 @@ export default function TutorialPage() {
                                 After signing in, click on the **"Get API key"** button. You can usually find this on the top left side of the page.
                             </p>
                             <div className="p-4 border rounded-md bg-muted/50">
-                                {/* Aapko yahan par Google AI Studio ka screenshot daalna hoga */}
                                 <Image
-                                    src="/tutorial-step-2.png"
+                                    src="/Google-AI-Studio.png"
                                     width={800}
                                     height={400}
                                     alt="Screenshot of Google AI Studio"
@@ -61,6 +61,13 @@ export default function TutorialPage() {
                             </p>
                             <div className="p-4 border rounded-md bg-muted/50">
                                 {/* Yahan par "Create API key" dialog ka screenshot daalein */}
+                                <Image
+                                    src="/API-key-PromptBox.png"
+                                    width={800}
+                                    height={400}
+                                    alt="Screenshot of api key prompt box"
+                                    className="rounded-md border"
+                                />
                                 <p className="text-center text-muted-foreground">[Screenshot of the API key generation dialog]</p>
                             </div>
                         </li>
@@ -72,7 +79,14 @@ export default function TutorialPage() {
                                 Your new API key will be displayed. It's a long string of random characters starting with `AIzaSy...`. Click the copy icon next to the key to copy it to your clipboard. **Keep this key safe and do not share it publicly.**
                             </p>
                             <div className="p-4 border rounded-md bg-muted/50">
-                                {/* Yahan par generate hui key ka screenshot daalein */}
+                                
+                                <Image
+                                    src="/Key-Genrated.png"
+                                    width={800}
+                                    height={400}
+                                    alt="Screenshot of generated Gemini api key "
+                                    className="rounded-md border"
+                                />
                                 <p className="text-center text-muted-foreground">[Screenshot of the newly generated API key with the copy button highlighted]</p>
                             </div>
                         </li>
@@ -81,9 +95,10 @@ export default function TutorialPage() {
                         <li className="space-y-2">
                             <h3 className="text-lg font-semibold">Paste the Key in Sens-AI</h3>
                             <p className="text-muted-foreground">
-                                Come back to the Sens-AI settings page and paste the copied key into the input field. Click the **"Save API Key"** button, and you're all set!
+                                Come back to the Sens-AI settings page and paste the copied key into the input field. Click the "Save API Key" button, and you're all set!
                             </p>
-                            <Link href="/settings">
+                            <br />
+                            <Link href="/settings" className="mt-4 ms-4">
                                 <Button>Go to Settings</Button>
                             </Link>
                         </li>
